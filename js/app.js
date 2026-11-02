@@ -695,7 +695,7 @@ Views.sozlamalar = (el) => {
       <h3>Ovoz</h3>
       ${Sound.supported ? (Sound.hasJa() ? `<div><div class="tiny" style="margin-bottom:6px">Yaponcha ovoz (${Sound.jaVoices.length} ta topildi)</div><select data-voice>${Sound.jaVoices.map(v => `<option value="${esc(v.voiceURI)}" ${Sound.voice() === v ? 'selected' : ''}>${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select></div>` : voiceNotice() || '<div class="notice">Yaponcha ovoz topilmadi.</div>') : '<div class="notice">Bu brauzer nutq sintezini qo‘llab-quvvatlamaydi.</div>'}
       <div><div class="row between"><span class="tiny">Nutq tezligi</span><b class="small" data-ratev>${s.rate.toFixed(2)}×</b></div><input type="range" min="0.5" max="1.3" step="0.05" value="${s.rate}" data-rate></div>
-      <button class="btn" data-test style="align-self:flex-start">🔊 Sinab ko'rish: こんにちは</button>
+      <div class="row"><button class="btn" data-test>🔊 Sinab ko'rish: こんにちは</button><button class="btn" data-fix>🔄 Ovozni qayta ishga tushirish</button></div>
       <p class="tiny" style="margin:0">Sintez qilingan ovoz ona tilida so'zlashuvchi yozuvlari o'rnini bosa olmaydi. Ovozni tanish (🎤) faqat Chrome/Edge'da internet orqali ishlaydi${Sound.canRecognize() ? ' — bu brauzerda mavjud.' : ' — bu brauzerda mavjud emas.'}</p>
     </div>
     <div class="card stack">
@@ -716,6 +716,7 @@ Views.sozlamalar = (el) => {
   $('[data-voice]', el)?.addEventListener('change', e => { s.voice = e.target.value; Store.save(); Sound.speak('こんにちは'); });
   $('[data-rate]', el).oninput = e => { s.rate = +e.target.value; $('[data-ratev]', el).textContent = s.rate.toFixed(2) + '×'; Store.save(); };
   $('[data-test]', el).onclick = () => Sound.speak('こんにちは');
+  $('[data-fix]', el).onclick = () => { Sound.reset(); Sound.speak('はい、だいじょうぶです'); toast('Ovoz qayta ishga tushirildi'); };
   $('[data-exp]', el).onclick = () => {
     const json = Store.export();
     download(`nihongo-progress-${Store.dateKey()}.json`, json, 'application/json');

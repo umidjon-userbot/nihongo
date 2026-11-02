@@ -1,5 +1,5 @@
 /* Offline cache (cache-first for app shell) */
-const CACHE = 'nihongo-start-v1';
+const CACHE = 'nihongo-start-v2';
 const FILES = ['./', './index.html', './manifest.json', './icon.svg', './css/style.css',
   './js/strokes-data.js', './js/kana-data.js', './js/phrases-data.js', './js/lessons-data.js',
   './js/progress.js', './js/srs.js', './js/audio.js', './js/quiz.js', './js/app.js'];

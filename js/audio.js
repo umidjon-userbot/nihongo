@@ -6,45 +6,68 @@ const Sound = {
   voices: [], jaVoices: [], loaded: false, listeners: [],
   init() {
     if (!this.supported) { this.loaded = true; return; }
+    let prevJa = null;
     const load = () => {
       this.voices = speechSynthesis.getVoices() || [];
       this.jaVoices = this.voices.filter(v => /^ja([-_]|$)/i.test(v.lang));
       this.loaded = true;
-      this.listeners.forEach(f => { try { f(); } catch (e) { } });
+      const has = this.jaVoices.length > 0;
+      if (has !== prevJa) { prevJa = has; this.listeners.forEach(f => { try { f(); } catch (e) { } }); }
     };
     load();
-    if ('onvoiceschanged' in speechSynthesis) speechSynthesis.onvoiceschanged = load;
+    if (speechSynthesis.addEventListener) speechSynthesis.addEventListener('voiceschanged', load);
+    else speechSynthesis.onvoiceschanged = load;
     setTimeout(load, 800); setTimeout(load, 2500);
+    // Unstick the engine when the user returns to the tab (mobile browsers pause it)
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') this.reset(); });
+    // Chrome stops long speech after ~15 s unless it is nudged
+    setInterval(() => { try { if (speechSynthesis.speaking && !speechSynthesis.paused) { speechSynthesis.pause(); speechSynthesis.resume(); } } catch (e) { } }, 10000);
   },
   onVoices(f) { this.listeners.push(f); },
   hasJa() { return this.jaVoices.length > 0; },
   voice() {
+    if (!this.jaVoices.length) { try { this.voices = speechSynthesis.getVoices() || []; this.jaVoices = this.voices.filter(v => /^ja([-_]|$)/i.test(v.lang)); } catch (e) { } }
     const want = Store.data.settings.voice;
     return this.jaVoices.find(v => v.voiceURI === want) || this.jaVoices.find(v => /google|kyoko|nanami|haruka|ayumi|o-ren/i.test(v.name)) || this.jaVoices[0] || null;
   },
-  _token: 0,
+  reset() { try { speechSynthesis.cancel(); if (speechSynthesis.paused) speechSynthesis.resume(); } catch (e) { } },
+  _token: 0, _keep: [],
   /* Resolves with the playback duration in ms (0 if unsupported) */
   speak(text, opts = {}) {
     return new Promise(resolve => {
       if (!this.supported || !text) { resolve(0); return; }
       const token = ++this._token;
-      try { speechSynthesis.cancel(); } catch (e) { }
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'ja-JP';
-      const v = this.voice(); if (v) u.voice = v;
-      u.rate = opts.rate || Store.data.settings.rate || 0.9;
-      u.pitch = 1;
+      const make = () => {
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'ja-JP';
+        const v = this.voice(); if (v) u.voice = v;
+        u.rate = opts.rate || Store.data.settings.rate || 0.9;
+        u.pitch = 1; u.volume = 1;
+        u.onstart = () => { started = true; };
+        u.onend = finish; u.onerror = e => { if (e && (e.error === 'interrupted' || e.error === 'canceled')) finish(); else if (!retried) retry(); else finish(); };
+        // keep a reference: Chrome may garbage-collect the utterance and never finish it
+        this._keep.push(u); if (this._keep.length > 5) this._keep.shift();
+        return u;
+      };
       const t0 = performance.now();
-      let done = false;
+      let done = false, started = false, retried = false;
       const finish = () => { if (done) return; done = true; resolve(performance.now() - t0); };
-      u.onend = finish; u.onerror = finish;
-      // Safety timeout (some browsers never fire onend)
-      const est = 600 + text.length * 260 / u.rate;
-      setTimeout(finish, Math.min(20000, est * 2.2));
-      setTimeout(() => { if (token === this._token) { try { speechSynthesis.speak(u); } catch (e) { finish(); } } }, 40);
+      const retry = () => {
+        if (retried || done || token !== this._token) return;
+        retried = true;
+        this.reset();
+        try { speechSynthesis.speak(make()); } catch (e) { finish(); }
+      };
+      try { if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel(); if (speechSynthesis.paused) speechSynthesis.resume(); } catch (e) { }
+      // speak synchronously so it stays inside the user's tap (required on iOS / some Android browsers)
+      try { speechSynthesis.speak(make()); } catch (e) { finish(); return; }
+      // Watchdog: if nothing started (engine stuck after cancel), reset and try once more
+      setTimeout(() => { if (!started && !done && token === this._token && !speechSynthesis.speaking) retry(); }, 700);
+      const est = 600 + text.length * 260 / (opts.rate || Store.data.settings.rate || 0.9);
+      setTimeout(finish, Math.min(20000, est * 2.2 + 1500));
     });
   },
-  stop() { this._token++; if (this.supported) try { speechSynthesis.cancel(); } catch (e) { } },
+  stop() { this._token++; if (this.supported) this.reset(); },
 
   /* ---- Recording (MediaRecorder) ---- */
   rec: null, chunks: [], stream: null,
